@@ -1,0 +1,73 @@
+#attach the working sheet
+attach(VAR_MODEL)
+#load required packages
+library(orca)
+library(vars)
+library(mFilter)
+library(tseries)
+library(forecast)
+library(tidyverse)
+library(ggplot2)
+
+#simple scatter plot
+ggplot(data = VAR_MODEL) + geom_point(mapping = aes(x = UNEMP, y = CPI))
+
+#declare time-series variables
+unemp <- ts(VAR_MODEL$UNEMP, start = c(1960,1), frequency = 12)
+cpi <- ts(VAR_MODEL$CPI, start = c(1960,1), frequency = 12)
+
+#plot the series
+autoplot(cbind(unemp, cpi))
+
+#determine the persistence of the model using ACF and PACF
+acf(unemp, main = "ACF for unemp")
+pacf(unemp, main = "PACF for unemp")
+acf(cpi, main = "ACF for cpi")
+pacf(cpi, main = "PACF for cpi")
+
+#finding the optimal lags
+VAR_MODEL.bv <- cbind(unemp, cpi)
+colnames(VAR_MODEL.bv) <- cbind("Unemployment", "Cpi")
+
+lagselect <- VARselect(VAR_MODEL.bv, lag.max = 10, type = "const")
+lagselect$selection
+
+#building VAR
+modelVAR <- VAR(VAR_MODEL.bv, p = 1, type = "const", season = NULL, exog = NULL)
+summary(modelVAR)
+
+#VAR diagnostics
+#test for autocorrelation (p-value < 0.05 indicates autocorrelation)
+Serial1 <- serial.test(modelVAR, lags.pt = 12, type = "PT.asymptotic")
+Serial1
+
+#test for heteroskedasticity (p-value < 0.05 indicates heteroskedasticity)
+Arch1 <- arch.test(modelVAR, lags.multi = 12, multivariate.only = TRUE)
+Arch1
+
+#test for normal distribution of residuals (p-value < 0.05 violates normality)
+Norm1 <- normality.test(modelVAR, multivariate.only = TRUE)
+Norm1
+
+#test for structural breaks in residuals (line should not exceed boundaries)
+Stability1 <- stability(modelVAR, type = "OLS-CUSUM")
+plot(Stability1)
+
+#granger causality
+grangerunemp <- causality(modelVAR, cause = "Unemployment")
+grangerunemp
+grangercpi <- causality(modelVAR, cause = "Cpi")
+grangercpi
+
+#impulse response functions (same can be done for cpi)
+unempIRF <- irf(modelVAR, impulse = "Cpi", response = "Unemployment", n.ahead = 10, boot = TRUE)
+plot(unempIRF, ylab = "Unemployment", main = "Shock from Cpi")
+
+#variance decomposition
+FEVD1 <- fevd(modelVAR, n.ahead = 15)
+plot(FEVD1)
+
+#VAR forecasting 
+forecast1 <- predict(modelVAR, n.ahead = 5, ci = 0.95)
+fanchart(forecast1, names = "Unemployment")
+fanchart(forecast1, names = "Cpi")
